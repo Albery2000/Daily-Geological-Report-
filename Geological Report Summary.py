@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# === CRITICAL: Explicitly import openpyxl (fixes the error) ===
-import openpyxl  # ← This line prevents the "Missing optional dependency 'openpyxl'" error
-
 st.set_page_config(page_title="DGR Analyzer - North Bahariya", layout="wide")
 st.title("🏢 Daily Geological Report Analyzer")
 st.markdown("Upload your **AB-xxx, DGR-xxx.xlsx** file → get a clean professional summary instantly")
