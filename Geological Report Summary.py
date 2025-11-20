@@ -3,104 +3,92 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="DGR Analyzer - North Bahariya", layout="wide")
-st.title("🏢 Daily Geological Report Analyzer")
-st.markdown("Upload your **AB-xxx, DGR-xxx.xlsx** file → get a clean professional summary instantly")
+st.set_page_config(page_title="North Bahariya DGR Analyzer", layout="wide")
+st.title("🏢 North Bahariya Daily Geological Report Analyzer")
+st.markdown("Upload any **AB-xxx, DGR-xxx.xlsx** → get a clean merged summary in seconds")
 
-uploaded_file = st.file_uploader("Upload Excel Report", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload DGR Excel file", type=["xlsx"])
 
-# Excel serial date → real date
-def excel_date(num):
-    if pd.isna(num):
-        return "N/A"
+def excel_date(n):
     try:
-        return (datetime(1899, 12, 30) + timedelta(days=int(float(num)))).strftime("%Y-%m-%d")
+        return (datetime(1899, 12, 30) + timedelta(days=int(float(n)))).strftime("%Y-%m-%d")
     except:
         return "N/A"
 
-if uploaded_file is not None:
+if uploaded_file:
     try:
-        # Load all 3 sheets without assuming headers
+        # === Load the 3 sheets exactly as they are named ===
         daily = pd.read_excel(uploaded_file, sheet_name="Daily Geological Report", header=None)
         litho_desc = pd.read_excel(uploaded_file, sheet_name="Lithological Description", header=None)
-        litho_gas = pd.read_excel(uploaded_file, sheet_name="Lithology %, ROP & Gas Reading", header=None)
+        gas_sheet = pd.read_excel(uploaded_file, sheet_name="Lithology %, ROP & Gas Reading", header=None)
 
-        # Helper: find value after a keyword in any row
-        def find_after(df, keyword, col_offset=4):
-            for _, row in df.iterrows():
-                row_str = " ".join(row.astype(str).fillna(""))
-                if keyword in row_str:
+        # === Helper: find value after keyword ===
+        def val_after(keyword, col_offset=4):
+            for _, row in daily.iterrows():
+                txt = " ".join(row.astype(str))
+                if keyword in txt:
                     try:
-                        return row.iloc[row_str.split(keyword)[0].count(" ") + col_offset]
+                        idx = txt.split(keyword)[1].split()[0]
+                        return row[row == idx].index[0] + col_offset
                     except:
-                        continue
-            return "N/A"
+                        return row.iloc[row[row.str.contains(keyword, na=False)].index[0] + col_offset]
+            return None
 
-        # ==================== WELL HEADER ====================
-        concession = find_after(daily, "Concession:-", 5)
-        well_name = find_after(daily, "Well:-", 5)
-        report_no = find_after(daily, "Report No.:-", 3)
-        rkb = find_after(daily, "RKB:-", 3)
-        date_raw = find_after(daily, "Date:-", 3)
-        spud_raw = find_after(daily, "Spud Date:-", 3)
-        geologist = "Youssef Osama / Mahmoud EL-Bana"  # common in your files
+        # === Well Header ===
+        concession = daily[daily.apply(lambda r: r.astype(str).str.contains("Concession").any(), axis=1)].iloc[0,4]
+        well_name  = daily[daily.apply(lambda r: "Well:-" in " ".join(r.astype(str)), axis=1)].iloc[0,12]
+        date_raw   = daily[daily.apply(lambda r: "Date:-" in " ".join(r.astype(str)), axis=1)].iloc[0,4]
+        report_no  = daily[daily.apply(lambda r: "Report No.:-" in " ".join(r.astype(str)), axis=1)].iloc[0,12]
+        rkb        = daily[daily.apply(lambda r: "RKB:-" in " ".join(r.astype(str)), axis=1)].iloc[0,12]
+        spud_raw   = daily[daily.apply(lambda r: "Spud Date:-" in " ".join(r.astype(str)), axis=1)].iloc[0,12]
+        geologist  = "Youssef Osama / Mahmoud EL-Bana"
 
         report_date = excel_date(date_raw)
-        spud_date = excel_date(spud_raw)
+        spud_date   = excel_date(spud_raw)
 
-        # ==================== DRILLING PROGRESS ====================
-        def get_depth_value(text):
+        # === Drilling Progress ===
+        def get_depth(text):
             row = daily[daily.apply(lambda r: text in " ".join(r.astype(str)), axis=1)]
-            if not row.empty:
-                vals = row.iloc[0].dropna()
-                return vals.iloc[-2] if len(vals) > 2 else vals.iloc[-1]
-            return "N/A"
+            if row.empty: return "N/A"
+            return row.iloc[0].dropna().iloc[-2]
 
-        depth_24 = get_depth_value("24:00 Hrs")
-        depth_00 = get_depth_value("00:00 Hrs")
-        depth_06 = get_depth_value("06:00 Hrs")
-        prog_24 = get_depth_value("Progress 0-24 Hrs")
-        prog_06 = get_depth_value("Progress Last 6 Hrs")
+        depth_24h = get_depth("24:00 Hrs")
+        depth_00h = get_depth("00:00 Hrs")
+        depth_06h = get_depth("06:00 Hrs")
+        prog_24h  = get_depth("Progress 0-24 Hrs")
+        prog_6h   = get_depth("Progress Last 6 Hrs")
 
-        # ==================== FORMATION TOPS ====================
-        try:
-            header_row = daily[daily.apply(lambda r: "Formation Name" in " ".join(r.astype(str)), axis=1)].index[0]
-            tops_raw = daily.iloc[header_row+4:header_row+20].iloc[:, [2,3,4,5,6,7,8,9,10]]
-            tops_raw.columns = ["Formation", "Member", "Prog_MD", "Prog_TVD", "Prog_SS", "Prog_Thk",
-                                "Act_MD", "Act_TVDSS", "Act_Thk"]
-            tops_clean = tops_raw[["Formation", "Member", "Prog_MD", "Prog_TVD", "Act_MD"]].copy()
-            tops_clean = tops_clean.dropna(subset=["Formation"])
-            tops_clean = tops_clean[tops_clean["Formation"].str.strip() != ""]
-            tops_clean = tops_clean[~tops_clean["Formation"].astype(str).str.contains("T.D.")]
-            tops_clean = tops_clean.replace(["", "nan"], np.nan)
-        except:
-            tops_clean = pd.DataFrame(columns=["Formation", "Member", "Prog_MD", "Prog_TVD", "Act_MD"])
+        # === Formation Tops Table ===
+        header_row = daily[daily[0].astype(str).str.contains("Formation Name")].index[0]
+        tops = daily.iloc[header_row+4:header_row+25, [2,3,4,6,7,9]].copy()
+        tops.columns = ["Formation", "Member", "Prog_MD", "Prog_TVD", "Actual_MD", "Diff_MD"]
+        tops = tops.dropna(subset=["Formation"])
+        tops = tops[~tops["Formation"].astype(str).str.contains("T.D.")]
+        tops = tops[tops["Formation"] != ""]
 
-        # ==================== CURRENT FORMATION ====================
-        drilled_formations = tops_clean.dropna(subset=["Act_MD"])["Formation"].tolist()
-        current_formation = drilled_formations[-1] if drilled_formations else "Surface"
+        # === Current Formation (last one with actual depth) ===
+        drilled = tops.dropna(subset=["Actual_MD"])
+        current_fm = drilled.iloc[-1]["Formation"] if not drilled.empty else "Unknown"
+        current_member = drilled.iloc[-1]["Member"] if pd.notna(drilled.iloc[-1]["Member"]) else ""
+        current_formation = f"{current_fm} {current_member}".strip()
 
-        # ==================== GAS READINGS ====================
-        try:
-            gas_data = litho_gas.iloc[9:, [0, 8,9,10,11,12,13,14]]
-            gas_data = gas_data.dropna(subset=[0])
-            gas_data.columns = ["Depth", "TG", "C1", "C2", "C3", "iC4", "nC4", "C5"]
-            gas_data = gas_data[gas_data["Depth"].apply(lambda x: str(x).replace('.','').isdigit())]
-            gas_data[["Depth", "TG", "C1", "C2", "C3", "iC4", "nC4", "C5"]] = gas_data[["Depth", "TG", "C1", "C2", "C3", "iC4", "nC4", "C5"]].apply(pd.to_numeric, errors='coerce')
-            gas_data = gas_data.dropna(subset=["TG", "C1"])
+        # === Gas Readings ===
+        gas_start = gas_sheet[gas_sheetheet.apply(lambda r: "DEPTH" in " ".join(r.astype(str)).upper(), axis=1)].index[0] + 2
+        gas = gas_sheet.iloc[gas_start:gas_start+200, [0,8,9]].dropna(subset=[0])
+        gas.columns = ["Depth", "TG", "C1"]
+        gas = gas[gas["Depth"].apply(lambda x: isinstance(x, (int,float)) or str(x).replace(".","").isdigit())]
+        gas[["Depth","TG","C1"]] = gas[["Depth","TG","C1"]].apply(pd.to_numeric, errors='coerce')
+        gas = gas.dropna()
 
-            max_tg = gas_data["TG"].max()
-            max_c1 = gas_data["C1"].max()
-            avg_tg = gas_data["TG"].mean()
-        except:
-            max_tg = max_c1 = avg_tg = 0
-            gas_data = pd.DataFrame()
+        max_tg = gas["TG"].max()
+        max_c1 = gas["C1"].max()
+        avg_tg = round(gas["TG"].mean(), 0)
 
-        # ==================== DISPLAY RESULTS ====================
-        st.success("✅ Report parsed successfully!")
+        # === DISPLAY ===
+        st.success("✅ File parsed perfectly!")
 
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.subheader("🏢 Well Information")
             st.write(f"**Concession:** {concession}")
             st.write(f"**Well:** {well_name}")
@@ -110,49 +98,36 @@ if uploaded_file is not None:
             st.write(f"**Spud Date:** {spud_date}")
             st.write(f"**Geologist:** {geologist}")
 
-        with col2:
-            st.subheader("⛏️ Drilling Progress (Last 24h)")
-            st.metric("Depth @ 24:00 hrs", f"{depth_24} ft")
-            st.metric("Depth @ 00:00 hrs", f"{depth_00} ft")
-            st.metric("Depth @ 06:00 hrs", f"{depth_06} ft")
-            st.metric("Progress 0–24 hrs", f"{prog_24} ft")
-            st.metric("Progress Last 6 hrs", f"{prog_06} ft")
+        with c2:
+            st.subheader("⛏️ Drilling Progress (Last 24 hrs)")
+            st.metric("Depth @ 24:00 hrs", f"{depth_24h} ft")
+            st.metric("Depth @ 00:00 hrs", f"{depth_00h} ft")
+            st.metric("Depth @ 06:00 hrs", f"{depth_06h} ft")
+            st.metric("Progress 0–24 hrs", f"{prog_24h} ft")
+            st.metric("Progress Last 6 hrs", f"{prog_6h} ft")
 
         st.subheader("🪨 Current Formation Being Drilled")
         st.info(f"**{current_formation}**")
 
         st.subheader("📏 Formation Tops – Actual vs Prognosed")
-        styled_tops = tops_clean.style.format({
-            "Prog_MD": "{:.0f}", "Prog_TVD": "{:.0f}", "Act_MD": "{:.0f}"
-        }).background_gradient(subset=["Act_MD"], cmap="Greens")
-        st.dataframe(styled_tops, use_container_width=True)
+        st.dataframe(tops.style.format({"Prog_MD":"{:.0f}", "Prog_TVD":"{:.0f}", "Actual_MD":"{:.0f}", "Diff_MD":"{:+.0f}"}), use_container_width=True)
 
-        st.subheader("🔥 Gas Readings Summary")
+        st.subheader("🔥 Gas Readings Summary (Apollonia + Khoman)")
         g1, g2, g3 = st.columns(3)
-        g1.metric("Max Total Gas (TG)", f"{max_tg:.0f}" if max_tg > 0 else "—", "ppm")
-        g2.metric("Max Methane (C1)", f"{max_c1:.0f}" if max_c1 > 0 else "—", "ppm")
-        g3.metric("Avg Background Gas", f"{avg_tg:.0f}" if avg_tg > 0 else "—", "ppm")
+        g1.metric("Max Total Gas (TG)", f"{max_tg:.0f} ppm")
+        g2.metric("Max Methane (C1)", f"{max_c1:.0f} ppm")
+        g3.metric("Avg Background Gas", f"{avg_tg} ppm")
 
-        if not gas_data.empty:
-            st.line_chart(gas_data.set_index("Depth")[["TG", "C1"]], use_container_width=True)
+        if not gas.empty:
+            st.line_chart(gas.set_index("Depth")[["TG", "C1"]], use_container_width=True)
 
-        # Download button
-        summary_md = f"# {well_name} - DGR {report_no}\n\n" \
-                     f"**Date:** {report_date} | **Depth:** {depth_00} ft\n\n" \
-                     + tops_clean.to_markdown(index=False) \
-                     + "\n\n## Gas Readings\n" + gas_data.to_markdown(index=False)
-
-        st.download_button(
-            "📥 Download Summary (Markdown)",
-            summary_md,
-            file_name=f"{well_name}_DGR_{report_no}_Summary.md",
-            mime="text/markdown"
-        )
+        # Download summary
+        md = f"# {well_name} – DGR {report_no}\n\n**Date:** {report_date} | **Depth:** {depth_00h} ft\n\n" + tops.to_markdown(index=False)
+        st.download_button("📥 Download Summary (Markdown)", md, f"{well_name}_DGR{report_no}_Summary.md", "text/markdown")
 
     except Exception as e:
-        st.error("Could not parse the file. Make sure it has the 3 correct sheets.")
-        st.write("Error details:", str(e))
-
+        st.error("File loaded but parsing failed. Check sheet names are exactly:")
+        st.code("Daily Geological Report\nLithological Description\nLithology %, ROP & Gas Reading")
+        st.write("Error:", str(e))
 else:
-    st.info("👆 Upload your Daily Geological Report (.xlsx) to start")
-    st.markdown("Supported format: **AB-88, DGR-5.xlsx** style reports with 3 sheets")
+    st.info("Upload your North Bahariya DGR Excel file to begin")
