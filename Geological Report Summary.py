@@ -2,25 +2,68 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
+import subprocess
+import sys
+
+def install_package(package):
+    """Install a package using pip"""
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+        return True
+    except:
+        return False
+
+def check_dependencies():
+    """Check if required packages are installed, install if missing"""
+    required_packages = ['xlrd', 'openpyxl']
+    missing_packages = []
+    
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        st.warning(f"Installing missing dependencies: {', '.join(missing_packages)}")
+        for package in missing_packages:
+            if install_package(package):
+                st.success(f"✓ Successfully installed {package}")
+            else:
+                st.error(f"✗ Failed to install {package}")
+                return False
+    return True
 
 def parse_excel_file(uploaded_file):
     """Parse the Excel file and extract required data from all three sheets"""
     try:
         # Try different engines to read Excel file
+        engines_to_try = ['openpyxl', 'xlrd']
+        
+        for engine in engines_to_try:
+            try:
+                df_daily = pd.read_excel(uploaded_file, sheet_name='Daily Geological Report', header=None, engine=engine)
+                df_litho_desc = pd.read_excel(uploaded_file, sheet_name='Lithological Description', header=None, engine=engine)
+                df_litho_gas = pd.read_excel(uploaded_file, sheet_name='Lithology %, ROP & Gas Reading', header=None, engine=engine)
+                st.success(f"✓ Successfully read file using {engine} engine")
+                return df_daily, df_litho_desc, df_litho_gas
+            except Exception as e:
+                st.info(f"Tried {engine} engine: {str(e)}")
+                continue
+        
+        # If no engine worked, try without specifying engine
         try:
             df_daily = pd.read_excel(uploaded_file, sheet_name='Daily Geological Report', header=None)
             df_litho_desc = pd.read_excel(uploaded_file, sheet_name='Lithological Description', header=None)
             df_litho_gas = pd.read_excel(uploaded_file, sheet_name='Lithology %, ROP & Gas Reading', header=None)
-        except:
-            # Fallback to xlrd engine
-            df_daily = pd.read_excel(uploaded_file, sheet_name='Daily Geological Report', header=None, engine='xlrd')
-            df_litho_desc = pd.read_excel(uploaded_file, sheet_name='Lithological Description', header=None, engine='xlrd')
-            df_litho_gas = pd.read_excel(uploaded_file, sheet_name='Lithology %, ROP & Gas Reading', header=None, engine='xlrd')
-        
-        return df_daily, df_litho_desc, df_litho_gas
+            st.success("✓ Successfully read file using default engine")
+            return df_daily, df_litho_desc, df_litho_gas
+        except Exception as e:
+            st.error(f"Default engine also failed: {str(e)}")
+            return None, None, None
+            
     except Exception as e:
         st.error(f"Error reading Excel file: {str(e)}")
-        st.info("Please ensure you have either openpyxl or xlrd installed: pip install xlrd")
         return None, None, None
 
 def extract_well_info(df_daily):
@@ -237,6 +280,12 @@ def main():
     st.set_page_config(page_title="Geological Report Analyzer", layout="wide")
     st.title("🏢 Daily Geological Report Analyzer")
     st.write("Upload your Daily Geological Report Excel file to generate a comprehensive analysis")
+    
+    # Check and install dependencies
+    if not check_dependencies():
+        st.error("Failed to install required dependencies. Please install them manually:")
+        st.code("pip install xlrd openpyxl")
+        return
     
     uploaded_file = st.file_uploader("Choose Excel file", type=['xlsx', 'xls'])
     
