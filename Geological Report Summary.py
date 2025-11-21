@@ -2,6 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+# Try to import openpyxl with fallback
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+    st.error("openpyxl is not installed. Please add it to your requirements.txt")
 
 st.set_page_config(page_title="North Bahariya DGR", layout="wide")
 st.title("🏢 North Bahariya Daily Geological Report Analyzer")
